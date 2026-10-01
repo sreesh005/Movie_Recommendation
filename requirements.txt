@@ -1,0 +1,8 @@
+lenskit==2026.3.0
+fastapi
+uvicorn[standard]
+pyarrow
+scikit-learn
+pandas
+numpy
+scipy
