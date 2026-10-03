@@ -1,4 +1,4 @@
-"""Train a LensKit item-item model on a filtered MovieLens 32M slice."""
+"""Trains ItemKNN on MovieLens 32M (movies with 20+ ratings), then runs the eval."""
 
 from __future__ import annotations
 
@@ -22,10 +22,9 @@ from backend.config import (
     KNN_NEIGHBORS,
     LINKS_CSV,
     METRICS_PATH,
+    MIN_MOVIE_RATINGS,
     MIN_USER_RATINGS,
     MOVIES_CSV,
-    N_MOVIES,
-    N_USERS,
     PIPELINE_PATH,
     RATING_TIMEZONE,
     RATINGS_CSV,
@@ -251,8 +250,8 @@ def evaluate_itemknn(pipe, fit: pd.DataFrame, hold: pd.DataFrame) -> dict:
 
 
 def train(quick: bool = False) -> None:
-    n_movies = 1500 if quick else N_MOVIES
-    n_users = 4000 if quick else N_USERS
+    n_movies_cap = 1500 if quick else None
+    n_users_cap = 4000 if quick else None
     ARTIFACTS.mkdir(exist_ok=True)
 
     log("Loading movies and links...")
@@ -265,16 +264,33 @@ def train(quick: bool = False) -> None:
     movie_genres = dict(zip(movies["movieId"].astype(int), movies["genres_list"]))
 
     counts = count_movie_ratings(RATINGS_CSV)
-    top_ids = [int(m) for m, _ in counts.most_common(n_movies)]
-    keep = set(top_ids)
-    log(f"Keeping top {len(keep):,} movies by rating count")
+    if n_movies_cap:
+        keep = {int(m) for m, _ in counts.most_common(n_movies_cap)}
+        log(f"Quick mode: keeping top {len(keep):,} movies")
+    else:
+        keep = {int(m) for m, c in counts.items() if c >= MIN_MOVIE_RATINGS}
+        log(f"Full catalog: keeping {len(keep):,} movies with >= {MIN_MOVIE_RATINGS} ratings")
 
     raw_parquet = ARTIFACTS / "catalog_ratings.parquet"
-    if raw_parquet.exists() and WATCH_PATH.exists():
+    reuse = False
+    if raw_parquet.exists() and TRAIN_INFO_PATH.exists() and WATCH_PATH.exists():
+        try:
+            info = json.loads(TRAIN_INFO_PATH.read_text(encoding="utf-8"))
+            reuse = (
+                not quick
+                and info.get("full") is True
+                and int(info.get("catalog_movies", -1)) == len(keep)
+                and int(pq.ParquetFile(raw_parquet).metadata.num_rows) > 30_000_000
+            )
+        except (json.JSONDecodeError, TypeError, ValueError):
+            reuse = False
+    if reuse:
         log("Reusing existing catalog ratings parquet and watch windows")
         watch_windows = json.loads(WATCH_PATH.read_text(encoding="utf-8"))
         n_catalog_ratings = int(pq.ParquetFile(raw_parquet).metadata.num_rows)
     else:
+        if raw_parquet.exists():
+            raw_parquet.unlink()
         genre_hour, genre_dow, n_catalog_ratings = stream_catalog_ratings(
             RATINGS_CSV, keep, movie_genres, raw_parquet
         )
@@ -287,8 +303,8 @@ def train(quick: bool = False) -> None:
     eligible = user_counts[user_counts >= MIN_USER_RATINGS].index
     log(f"  {len(eligible):,} users have >= {MIN_USER_RATINGS} ratings on catalog movies")
     rng = np.random.default_rng(RANDOM_SEED)
-    if len(eligible) > n_users:
-        eligible = pd.Index(rng.choice(eligible.to_numpy(), size=n_users, replace=False))
+    if n_users_cap is not None and len(eligible) > n_users_cap:
+        eligible = pd.Index(rng.choice(eligible.to_numpy(), size=n_users_cap, replace=False))
     train_ratings = catalog_ratings[catalog_ratings["userId"].isin(eligible)].copy()
     log(f"  training on {len(train_ratings):,} ratings from {train_ratings.userId.nunique():,} users")
 
@@ -337,7 +353,7 @@ def train(quick: bool = False) -> None:
     from lenskit.knn import ItemKNNScorer
     from lenskit.pipeline import topn_pipeline
 
-    eval_n = min(80 if quick else 250, train_ratings.userId.nunique())
+    eval_n = min(80 if quick else 120, train_ratings.userId.nunique())
     eval_users = rng.choice(train_ratings["userId"].unique(), size=eval_n, replace=False)
     hold = (
         train_ratings[train_ratings["userId"].isin(eval_users)]
@@ -369,16 +385,30 @@ def train(quick: bool = False) -> None:
             "catalog_ratings_scanned": int(n_catalog_ratings),
             "global_mean_rating": round(global_mean, 3),
             "timezone": RATING_TIMEZONE,
-            "dataset": "MovieLens 32M (filtered catalog + user sample)",
+            "dataset": "MovieLens 32M (all movies with >=20 ratings, all eligible users)",
+            "min_movie_ratings": MIN_MOVIE_RATINGS,
         }
     )
     METRICS_PATH.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     TRAIN_INFO_PATH.write_text(
-        json.dumps({"quick": quick, "n_movies": n_movies, "n_users": n_users}, indent=2),
+        json.dumps(
+            {
+                "quick": quick,
+                "full": not quick,
+                "catalog_movies": int(len(catalog)),
+                "n_users": None if n_users_cap is None else n_users_cap,
+                "min_movie_ratings": MIN_MOVIE_RATINGS,
+            },
+            indent=2,
+        ),
         encoding="utf-8",
     )
     log("Training complete.")
     log(json.dumps(metrics, indent=2))
+    log("Running ranking evaluation (ImplicitMF + hybrid)...")
+    from backend.evaluate import run as run_ranking_eval
+
+    run_ranking_eval()
 
 
 if __name__ == "__main__":

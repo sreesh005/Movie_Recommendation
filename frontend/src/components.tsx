@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Movie } from "./types";
+import { useRatings } from "./state";
 
 const PALETTES = [
   ["#3a2a1c", "#c9a227"],
@@ -42,19 +43,21 @@ export function Stars({
   value: number;
   onChange?: (value: number) => void;
 }) {
+  const pick = (next: number) => onChange?.(next === value ? 0 : next);
   return (
     <div className="stars" onClick={(e) => e.stopPropagation()}>
-      {[1, 2, 3, 4, 5].map((n) => (
-        <button
-          key={n}
-          type="button"
-          className={n <= Math.round(value) ? "on" : ""}
-          aria-label={`${n} star`}
-          onClick={() => onChange?.(n === Math.round(value) ? 0 : n)}
-        >
-          ★
-        </button>
-      ))}
+      {[1, 2, 3, 4, 5].map((n) => {
+        const fill = value >= n ? "full" : value >= n - 0.5 ? "half" : "";
+        return (
+          <span key={n} className="star">
+            <span className={`star-face ${fill}`} aria-hidden>
+              ★
+            </span>
+            <button type="button" className="star-hit left" aria-label={`${n - 0.5} stars`} onClick={() => pick(n - 0.5)} />
+            <button type="button" className="star-hit right" aria-label={`${n} stars`} onClick={() => pick(n)} />
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -65,25 +68,44 @@ export function MovieCard({
   onOpen,
   onRate,
   subtitle,
+  showPass = true,
 }: {
   movie: Movie;
   rating?: number;
   onOpen: (id: number) => void;
   onRate?: (id: number, rating: number) => void;
   subtitle?: string;
+  showPass?: boolean;
 }) {
+  const { togglePass, isPassed } = useRatings();
+  const hidden = isPassed(movie.movie_id);
   return (
-    <button className="card" type="button" onClick={() => onOpen(movie.movie_id)}>
-      <Poster movie={movie} />
+    <div className={`card ${hidden ? "passed" : ""}`}>
+      <div className="poster-wrap">
+        <button className="poster-hit" type="button" onClick={() => onOpen(movie.movie_id)}>
+          <Poster movie={movie} />
+        </button>
+        {showPass ? (
+          <button
+            className={`pass-x ${hidden ? "on" : ""}`}
+            type="button"
+            title={hidden ? "Show this again" : "Not interested"}
+            aria-label={hidden ? "Show this again" : "Not interested"}
+            onClick={() => togglePass(movie.movie_id)}
+          >
+            {hidden ? "↩" : "✕"}
+          </button>
+        ) : null}
+      </div>
       <div className="card-meta">
-        <div className="title">
+        <button className="title-hit" type="button" onClick={() => onOpen(movie.movie_id)}>
           {movie.title}
           {movie.year ? ` (${movie.year})` : ""}
-        </div>
+        </button>
         <div className="sub">{subtitle ?? movie.genres.slice(0, 2).join(" · ")}</div>
         {onRate ? <Stars value={rating ?? 0} onChange={(v) => onRate(movie.movie_id, v)} /> : null}
       </div>
-    </button>
+    </div>
   );
 }
 

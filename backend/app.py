@@ -24,6 +24,12 @@ class RecommendRequest(BaseModel):
     hour: int | None = None
     weekday: int | None = None
     n: int = 40
+    language: str | None = None
+    not_interested: list[int] = Field(default_factory=list)
+
+
+class IdsRequest(BaseModel):
+    ids: list[int] = Field(default_factory=list)
 
 
 def engine_or_503():
@@ -58,16 +64,40 @@ def metrics():
     return engine.metrics
 
 
-@app.get("/api/starters")
-def starters():
+@app.get("/api/survey")
+def survey():
     engine = engine_or_503()
-    return engine.starter_movies()
+    return engine.survey_rows()
+
+
+@app.get("/api/genres")
+def genres():
+    engine = engine_or_503()
+    return engine.genres()
+
+
+@app.get("/api/foreign-languages")
+def foreign_languages():
+    engine = engine_or_503()
+    return engine.foreign_languages()
+
+
+@app.get("/api/browse")
+def browse(genre: str | None = None, q: str = "", limit: int = 48):
+    engine = engine_or_503()
+    return engine.browse(genre=genre, q=q, limit=min(limit, 96))
 
 
 @app.get("/api/search")
 def search(q: str = "", limit: int = 24):
     engine = engine_or_503()
     return engine.search(q, limit=min(limit, 48))
+
+
+@app.post("/api/movies/batch")
+def movies_batch(body: IdsRequest):
+    engine = engine_or_503()
+    return engine.movies_public(body.ids)
 
 
 @app.get("/api/movies/{movie_id}")
@@ -86,7 +116,17 @@ def recommend(body: RecommendRequest):
     mood = body.mood if body.mood in {m["id"] for m in MOODS} else None
     hour = body.hour if body.hour is not None and 0 <= body.hour <= 23 else None
     weekday = body.weekday if body.weekday is not None and 0 <= body.weekday <= 6 else None
-    return engine.recommend(ratings, mood=mood, hour=hour, weekday=weekday, n=min(body.n, 80))
+    language = body.language.strip() if body.language else None
+    hidden = [int(i) for i in body.not_interested if int(i) > 0]
+    return engine.recommend(
+        ratings,
+        mood=mood,
+        hour=hour,
+        weekday=weekday,
+        n=min(body.n, 80),
+        language=language,
+        not_interested=hidden,
+    )
 
 
 dist = ROOT / "frontend" / "dist"

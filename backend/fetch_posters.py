@@ -1,4 +1,4 @@
-"""Fetch TMDB poster URLs for every catalog movie and cache them locally."""
+"""Grabs TMDB poster URLs for every movie and caches them."""
 
 from __future__ import annotations
 

@@ -19,6 +19,7 @@ export type Movie = {
   imdb_id: string | null;
   tmdb_id: number | null;
   poster_url: string | null;
+  language: string | null;
   watch: WatchWindow;
 };
 
@@ -29,18 +30,30 @@ export type RecMovie = Movie & {
   tonight_fit: boolean;
 };
 
+export type GenreRow = { name: string; movies: RecMovie[] };
+
 export type RecommendResponse = {
   hero: RecMovie | null;
   top: RecMovie[];
   tonight: RecMovie[];
+  weekend: RecMovie[];
+  weeknight: RecMovie[];
   hidden: RecMovie[];
+  indie: RecMovie[];
+  niche: RecMovie[];
+  foreign: RecMovie[];
   because: { title: string; movies: RecMovie[] }[];
+  genres: GenreRow[];
+  mood: string;
   count_ratings: number;
   personalized: boolean;
 };
 
+export type GenreInfo = { id: string; count: number };
+
 export type View =
-  | { name: "tonight" }
-  | { name: "rate" }
-  | { name: "foryou" }
+  | { name: "home" }
+  | { name: "survey" }
+  | { name: "browse"; genre: string | null }
+  | { name: "library" }
   | { name: "movie"; id: number };

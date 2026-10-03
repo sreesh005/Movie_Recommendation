@@ -1,6 +1,10 @@
 # Later
 
-A MovieLens 32M recommender: LensKit item–item collaborative filtering, plus genre taste and a “when to watch” suggestion.
+A MovieLens 32M recommender built with LensKit: ImplicitMF + genre + popularity, mood rows, and a “when to watch” suggestion.
+
+## Data
+
+Download [MovieLens 32M](https://grouplens.org/datasets/movielens/32m/) and put `ratings.csv`, `movies.csv`, `tags.csv`, and `links.csv` in the project root. The data isn't in the repo (too big, and the license doesn't allow redistribution).
 
 ## Run
 
@@ -33,9 +37,18 @@ The UI reads `artifacts/posters.json` and falls back to a title card when a film
 
 ## Algorithm
 
-1. Keep the 5,000 most-rated movies, then sample 12,000 users with at least 20 ratings.
-2. Train LensKit `ItemKNNScorer` (explicit item–item CF) and pickle the pipeline.
-3. At request time, blend KNN predicted ratings with genre cosine (content) and a Bayesian popularity prior.
-4. Watch windows combine genre heuristics with MovieLens rating-hour/day histograms in America/Chicago.
+1. Keep movies with at least 20 ratings (23,350 movies, 200,763 users, 31.7M ratings).
+2. Train ItemKNN (star predictions) and ImplicitMF on liked ratings (4+ stars).
+3. At request time, blend ImplicitMF × log rating count, genre cosine, and popularity. Weights shift toward ImplicitMF as the user rates more movies.
+4. Watch windows come from genre rules plus rating-hour/day histograms in America/Chicago.
 
-Cite in the report: Harper & Konstan (2015) MovieLens; Ekstrand (2020) LensKit; Linden et al. Amazon item-to-item CF; MovieLens.org / Netflix / Letterboxd as UI references.
+## Results (120-user holdout, 5 hidden ratings each)
+
+| Model | nDCG@20 | Recall@20 | Hits / 600 |
+|---|---|---|---|
+| ItemKNN (predicted stars) | 0.0058 | 0.0067 | 4 |
+| Hybrid + ImplicitMF (live) | 0.2037 | 0.2783 | 167 |
+
+ItemKNN star RMSE is 0.861. A logistic like/dislike classifier gets 70.5% accuracy (52.7% baseline).
+
+`python -m backend.evaluate` and `python -m backend.rating_eval` rerun the holdout and write `artifacts/metrics.json`.

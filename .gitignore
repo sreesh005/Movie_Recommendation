@@ -9,3 +9,16 @@ frontend/dist/
 Thumbs.db
 *.log
 .env
+
+# MovieLens data (download from GroupLens)
+/*.csv
+/README.txt
+/checksums.txt
+
+# one-off report editing scripts
+backend/_*
+
+# docs
+*.docx
+*.pptx
+~$*
